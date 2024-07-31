@@ -115,7 +115,7 @@ Pipfile
 Pipfile.lock
 
 # Vscode
-# .vscode/*
+.vscode/*
 
 # Spyder project settings
 .spyderproject
