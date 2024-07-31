@@ -249,7 +249,7 @@ class HOIEstimator(object):
         combinations : array_like
             Combinations of features.
         """
-        logger.info("Get list of multiplets")
+        # logger.info("Get list of multiplets")
         # specify whether to include target or not
         n = self._n_features_x
         if (not self._has_target) or self._encoding:

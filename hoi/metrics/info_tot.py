@@ -100,17 +100,18 @@ class InfoTot(HOIEstimator):
         h_idx, order = self.get_combinations(minsize, maxsize=maxsize)
 
         # get progress bar
-        pbar = get_pbar(
-            iterable=range(order.min(), order.max() + 1), leave=False
-        )
+        # pbar = get_pbar(
+        #     iterable=range(order.min(), order.max() + 1), leave=False
+        # )
+        pbar = range(order.min(), order.max() + 1)
 
         # _______________________________ HOI _________________________________
         offset = 0
         hoi = jnp.zeros((len(order), self.n_variables), dtype=jnp.float32)
         for msize in pbar:
-            pbar.set_description(
-                desc="Infotot order %s" % msize, refresh=False
-            )
+            # pbar.set_description(
+            #     desc="Infotot order %s" % msize, refresh=False
+            # )
 
             # combinations of features
             _h_idx = h_idx[order == msize, 0:msize]

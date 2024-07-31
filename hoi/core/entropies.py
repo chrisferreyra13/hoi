@@ -115,7 +115,7 @@ def prepare_for_it(data, method, samples=None, **kwargs):
     # -------------------------------------------------------------------------
     # method specific preprocessing
     if method == "gc":
-        logger.info("    Copnorm and demean the data")
+        # logger.info("    Copnorm and demean the data")
         data = preproc_gc_3d(data)
         kwargs["copnorm"] = False
     # elif method == "kernel":
