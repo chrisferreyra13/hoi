@@ -60,6 +60,8 @@ def get_entropy(method="gc", **kwargs):
         return partial(entropy_bin, **kwargs)
     elif method == "knn":
         return partial(entropy_knn, **kwargs)
+    elif method == "knn_old":
+        return partial(entropy_knn_old, **kwargs)
     elif method == "kernel":
         return partial(entropy_kernel, **kwargs)
     elif callable(method):
@@ -310,8 +312,7 @@ def entropy_knn(x, k: int = 3) -> jnp.array:
     # compute euclidian distance
     x = x.T[None]
     diff = x.transpose(1, 0, 2) - x
-    _dist = jnp.einsum("ijc->ij", diff**2)
-    eucl_xi = jnp.sqrt(_dist)
+    eucl_xi = jnp.sqrt(jnp.sum(diff**2, axis=-1))
     # dist to kth neighbor
     dist_k = jnp.sort(eucl_xi, axis=-1)[:, k]
 
@@ -363,3 +364,61 @@ preproc_kernel_2d = jax.jit(
 
 # kernel preprocessing for a 2d variable (n_variables, n_features, n_samples)
 preproc_kernel_3d = jax.jit(jax.vmap(preproc_kernel_2d, in_axes=0))
+
+
+@partial(jax.jit, static_argnums=(2,))
+def cdistk(xx, idx, k=3):
+    """K-th minimum euclidian distance."""
+    x, y = xx[:, [idx]], xx
+
+    # compute euclidian distance
+    eucl = jnp.sqrt(jnp.sum((x - y) ** 2, axis=0))
+
+    # remove distance from itself
+    eucl = eucl.at[idx].set(jnp.inf)
+
+    # distance from xi to its kth neighbor
+    eucl = jnp.sort(eucl)[k - 1]
+
+    return xx, eucl
+
+
+@partial(jax.jit, static_argnums=(1,))
+def entropy_knn_old(x: jnp.array, k: int = 3) -> jnp.array:
+    """Entropy using the k-nearest neighbor.
+
+    Original code: https://github.com/blakeaw/Python-knn-entropy/
+    and references. See also Kraskov et al., Estimating mutual information,
+    Phy rev, 2004
+
+    Parameters
+    ----------
+    x : array_like
+        Input data of shape (n_features, n_samples)
+    knn : int | 1
+        K-th closest point. Default is 1 (closest point)
+
+    Returns
+    -------
+    hx : float
+        Entropy of x (in bits)
+    """
+    # x = jnp.atleast_2d(x)
+    d, n = float(x.shape[0]), float(x.shape[1])
+
+    # wrap with knn
+    cdist = partial(cdistk, k=k)
+
+    # compute euclidian distance
+    _, r_k = jax.lax.scan(cdist, x, jnp.arange(int(n)).astype(int))
+
+    # volume of unit ball in d^n
+    c_d = (jnp.pi ** (d * 0.5)) / gamma(1.0 + d * 0.5) / (2**d)
+    log_c_d = jnp.log(c_d)
+
+    # sum log of distances
+    sum_log_dist = jnp.sum(jnp.log(2 * r_k))
+
+    h = -psi(k) + psi(n) + log_c_d + (d / n) * sum_log_dist
+
+    return jnp.maximum(0, h) / jnp.log(2)  # added compared to original code

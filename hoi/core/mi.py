@@ -37,6 +37,8 @@ def get_mi(method="gc", **kwargs):
         return mi_gauss
     elif method == "knn":
         return partial(mi_knn, **kwargs)
+    elif method == "knn_old":
+        return partial(mi_knn_old, **kwargs)
     elif callable(method):
         # test the function
         try:
@@ -239,7 +241,7 @@ def mi_gauss(x: jnp.array, y: jnp.array):
 def _cdist(x, y) -> jnp.ndarray:
     """Pairwise squared distances between all samples of x and y."""
     diff = x.T[:, None, :] - y.T[None]
-    _dist = jnp.einsum("ijc->ij", diff**2)
+    _dist = jnp.sum(diff**2, axis=-1)
     return _dist
 
 
@@ -281,6 +283,68 @@ def mi_knn(x, y, k: int = 3) -> jnp.array:
     # don't include the `i`th point itself in nx and ny
     nx = (eucl_xi < dist_k[:, None]).sum(axis=1) - 1
     ny = (eucl_yi < dist_k[:, None]).sum(axis=1) - 1
+
+    psi_mean = jnp.sum((psi(nx + 1) + psi(ny + 1)) / n)
+
+    mi = psi(k) - psi_mean + psi(n)
+    return mi / jnp.log(2)
+
+
+@partial(jax.jit, static_argnums=(2,))
+def n_neighbours(xy, idx, k=3):
+    """Return number of neighbours for each point based on kth neighbour."""
+    xi, x = xy[0][:, [idx]], xy[0]
+    yi, y = xy[1][:, [idx]], xy[1]
+
+    # compute euclidian distance from xi to all points in x (same y)
+    eucl_xi = jnp.sqrt(jnp.sum((xi - x) ** 2, axis=0))
+    eucl_yi = jnp.sqrt(jnp.sum((yi - y) ** 2, axis=0))
+
+    # distance in space (XxY) is the maximum distance.
+    max_dist_xy = jnp.maximum(eucl_xi, eucl_yi)
+    # indices to the closest points in the (XxY) space.
+    closest_points = jnp.argsort(max_dist_xy)
+    # the kth neighbour is at index k (ignoring the point itself)
+    # distance to the k-th neighbor for each point
+    dist_k = max_dist_xy[closest_points[k]]
+    # don't include the `i`th point itself in nx and ny
+    nx = (eucl_xi < dist_k).sum() - 1
+    ny = (eucl_yi < dist_k).sum() - 1
+
+    return xy, (nx, ny)
+
+
+@partial(jax.jit, static_argnums=(2,))
+def mi_knn_old(x, y, k: int = 3) -> jnp.array:
+    """Mutual information using the KSG estimator.
+
+    First algorithm proposed in Kraskov et al., Estimating mutual information,
+    Phy rev, 2004.
+
+    Parameters
+    ----------
+    x, y : array_like
+        Arrays to consider for computing the Mutual Information. The two input
+        variables x and y should have a shape of (n_features_x, n_samples) and
+        (n_features_y, n_samples)
+    k : int
+        Number of nearest neighbors to consider for the KSG estimator.
+
+    Returns
+    -------
+    mi : float
+        Floating value describing the mutual-information between x and y.
+    """
+    # n_samples
+    n = float(x.shape[1])
+
+    _n_neighbours = partial(n_neighbours, k=k)
+    # get number of neighbors for each point in XxY space
+    _, n_neighbors = jax.lax.scan(
+        _n_neighbours, (x, y), jnp.arange(int(n)).astype(int)
+    )
+    nx = n_neighbors[0]
+    ny = n_neighbors[1]
 
     psi_mean = jnp.sum((psi(nx + 1) + psi(ny + 1)) / n)
 
