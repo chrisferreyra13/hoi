@@ -263,7 +263,7 @@ class HOIEstimator(object):
             # automatic)
             if self._encoding or not self._has_target:
                 target = []
-            logger.info("    Selecting custom multiplets")
+            # logger.info("    Selecting custom multiplets")
             _orders = [len(m) for m in self._custom_mults]
             # adding target for not encoding metrics
             mults_ = [list(c) + target for c in self._custom_mults]

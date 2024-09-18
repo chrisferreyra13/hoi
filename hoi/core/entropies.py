@@ -325,7 +325,8 @@ def entropy_knn(x, k: int = 3) -> jnp.array:
 
     h = -psi(k) + psi(n) + log_c_d + (d / n) * sum_log_dist
 
-    return jnp.maximum(0, h) / jnp.log(2)  # added compared to original code
+    # return jnp.maximum(0, h) / jnp.log(2)  # added compared to original code
+    return h / jnp.log(2)
 
 
 ###############################################################################
