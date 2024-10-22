@@ -246,31 +246,12 @@ def _cdist(x, y) -> jnp.ndarray:
 
 
 @partial(jax.jit, static_argnums=(2,))
-def mi_knn(x, y, k: int = 3) -> jnp.array:
-    """Mutual information using the KSG estimator.
-
-    First algorithm proposed in Kraskov et al., Estimating mutual information,
-    Phy rev, 2004.
-
-    Parameters
-    ----------
-    x, y : array_like
-        Arrays to consider for computing the Mutual Information. The two input
-        variables x and y should have a shape of (n_features_x, n_samples) and
-        (n_features_y, n_samples)
-    k : int
-        Number of nearest neighbors to consider for the KSG estimator.
-
-    Returns
-    -------
-    mi : float
-        Floating value describing the mutual-information between x and y.
-    """
-    # n_samples
-    n = float(x.shape[1])
+def _get_neighbours(x, batch, k: int = 3):
+    """Return number of neighbours per sample."""
     # for each xi and yi, get the distance to neighbors
-    eucl_xi = jnp.sqrt(_cdist(x, x))
-    eucl_yi = jnp.sqrt(_cdist(y, y))
+    # leave batch dimension as first
+    eucl_xi = jnp.sqrt(_cdist(x[0][:, batch], x[0]))
+    eucl_yi = jnp.sqrt(_cdist(x[1][:, batch], x[1]))
 
     # distance in space (XxY) is the maximum distance.
     max_dist_xy = jnp.maximum(eucl_xi, eucl_yi)
@@ -284,9 +265,53 @@ def mi_knn(x, y, k: int = 3) -> jnp.array:
     nx = (eucl_xi < dist_k[:, None]).sum(axis=1) - 1
     ny = (eucl_yi < dist_k[:, None]).sum(axis=1) - 1
 
-    psi_mean = jnp.sum((psi(nx + 1) + psi(ny + 1)) / n)
+    return x, jnp.stack([nx, ny], axis=1)
 
-    mi = psi(k) - psi_mean + psi(n)
+
+@partial(jax.jit, static_argnums=(2, 3))
+def mi_knn(x, y, k: int = 3, batch_size: int = None) -> jnp.array:
+    """Mutual information using the KSG estimator.
+
+    First algorithm proposed in Kraskov et al., Estimating mutual information,
+    Phy rev, 2004.
+
+    Parameters
+    ----------
+    x, y : array_like
+        Arrays to consider for computing the Mutual Information. The two input
+        variables x and y should have a shape of (n_features_x, n_samples) and
+        (n_features_y, n_samples)
+    k : int
+        Number of nearest neighbors to consider for the KSG estimator.
+    batch_size : int | None
+        Number of samples used to compute neighbours at once. If None, all
+        samples are computed at the same time.
+
+    Returns
+    -------
+    mi : float
+        Floating value describing the mutual-information between x and y.
+    """
+    # n_samples
+    n_samples = x.shape[1]
+    if batch_size is None:
+        batch_size = n_samples
+    batches = jnp.array(
+        [
+            jnp.arange(i, i + batch_size)
+            for i in range(0, n_samples, batch_size)
+        ]
+    )
+    _get_neighbours_fn = partial(_get_neighbours, k=k)
+    # expecting (nx, ny) for each sample
+    _, ns = jax.lax.scan(_get_neighbours_fn, (x, y), batches)
+    # combine samples and remove last values after n_samples
+    # (they are just a copy of last sample)
+    ns = ns.reshape(-1, 2)[:n_samples]
+    n_samples = float(n_samples)
+    psi_mean = jnp.sum((psi(ns[:, 0] + 1) + psi(ns[:, 1] + 1)) / n_samples)
+
+    mi = psi(k) - psi_mean + psi(n_samples)
     return mi / jnp.log(2)
 
 
